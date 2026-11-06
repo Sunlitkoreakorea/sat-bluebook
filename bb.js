@@ -36,7 +36,10 @@
   var POOLS = [['new', '안 푼 문제 먼저'], ['unseen', '안 푼 문제만'], ['wrong', '틀린 문제만'], ['right', '맞힌 문제만'], ['star', '별표 문제만'], ['flag', '헷갈린 문제만'], ['any', '상관없이 무작위']];
   var NFILTERS = [['now', '아직 틀림'], ['fixed', '다시 맞힘'], ['star', '별표'], ['flag', '헷갈림'], ['all', '전체']];
   var ORDERS = [['random', '무작위'], ['easy', '쉬운 문제부터'], ['hard', '어려운 문제부터'], ['test', '실제 시험 순서', '유형 순서대로, 같은 유형은 쉬운 문제부터']];
-  var TIMERS = [['pace', '실제 시험 속도', '문제당 71초 (27문제 32분)'], ['custom', '직접 정하기'], ['up', '걸린 시간만 표시'], ['off', '끄기']];
+  var LIMITED = [['pace', '실제 시험 속도', '문제당 71초 (27문제 32분)'], ['custom', '직접 정하기']];
+  var FREE = [['up', '걸린 시간 보기'], ['off', '시계 숨기기']];
+  var TIMERS = LIMITED.concat(FREE);
+  function isLimited(t) { return t === 'pace' || t === 'custom'; }
   var CHECKS = [['end', '끝나고 한꺼번에', 'Bluebook처럼 제출한 뒤 채점'], ['instant', '한 문제씩 바로', '답을 고르고 Check Answer로 확인']];
   var COUNTS = [[5, '5'], [10, '10'], [20, '20'], [27, '27 (1모듈)'], [54, '54 (2모듈)'], [9999, '전부']];
   var ROWS = [
@@ -64,7 +67,8 @@
   function defaults() {
     return {
       ev: '99', skills: ORDER.slice(), diffs: ['E', 'M', 'H'], bands: BANDS.slice(), offT: [], noActive: false, pool: 'new',
-      count: 10, order: 'random', timer: 'pace', mins: 32, auto: true, check: 'end', info: false, font: 1
+      count: 10, order: 'random', timer: 'pace', mins: 32, auto: true, check: 'end', info: false, font: 1,
+      lastLimit: 'pace', lastFree: 'up'                     // what the 시간 제한 switch goes back to
     };
   }
   // res: latest result per question (1/0), log: attempt history with ids/codes/letters only, flag: 헷갈림 (Mark for Review),
@@ -404,7 +408,7 @@
       case 'pool': return pick(POOLS, p.pool)[1];
       case 'count': return p.count >= 9999 ? '전부' : p.count + '문제';
       case 'order': return pick(ORDERS, p.order)[1];
-      case 'time': return p.timer === 'custom' ? p.mins + '분' : pick(TIMERS, p.timer)[1];
+      case 'time': return !isLimited(p.timer) ? '제한 없음' : p.timer === 'custom' ? p.mins + '분' : pick(TIMERS, p.timer)[1];
       case 'check': return pick(CHECKS, p.check)[1];
       case 'view': return FONTS[p.font][1] + (p.info ? ', 유형 표시' : '');
       case 'ids': return findIds(ui.ids).items.length ? findIds(ui.ids).items.length + '문제' : '';
@@ -496,9 +500,15 @@
     } else if (k === 'order') {
       h = radios('order', ORDERS);
     } else if (k === 'time') {
-      h = radios('timer', TIMERS);
-      if (p.timer === 'custom') h += '<div class="d-sub">시간</div>' + stepper('mins', p.mins, 1, 180, p.mins + '분');
-      if (p.timer === 'pace' || p.timer === 'custom') h += '<div class="d-line">' + sw('auto', p.auto, '시간이 끝나면 자동 제출') + '</div>';
+      var limited = isLimited(p.timer);
+      h = '<div class="d-line first">' + sw('limit', limited, '시간 제한') + '<span class="n">' + (limited ? '' : '제한 없이 풀기') + '</span></div>';
+      if (limited) {
+        h += '<div class="d-sub">제한 시간</div>' + radios('timer', LIMITED);
+        if (p.timer === 'custom') h += '<div class="d-sub">시간</div>' + stepper('mins', p.mins, 1, 180, p.mins + '분');
+        h += '<div class="d-line">' + sw('auto', p.auto, '시간이 끝나면 자동 제출') + '</div>';
+      } else {
+        h += '<div class="d-sub">시계</div>' + radios('timer', FREE);
+      }
     } else if (k === 'check') {
       h = radios('check', CHECKS);
     } else if (k === 'view') {
@@ -1054,6 +1064,7 @@
     });
     out.ev = oneOf(TESTS, out.ev, '99'); out.pool = oneOf(POOLS, out.pool, 'new'); out.order = oneOf(ORDERS, out.order, 'random');
     out.timer = oneOf(TIMERS, out.timer, 'pace'); out.check = oneOf(CHECKS, out.check, 'end');
+    out.lastLimit = oneOf(LIMITED, out.lastLimit, 'pace'); out.lastFree = oneOf(FREE, out.lastFree, 'up');
     out.font = Math.max(0, Math.min(FONTS.length - 1, out.font | 0)); out.count = Math.max(1, out.count | 0); out.mins = Math.max(1, Math.min(180, out.mins | 0));
     return out;
   }
@@ -1181,7 +1192,7 @@
         }).join('');
       }).join('');
       body = '<div class="cfg' + (ui.open ? ' open' : '') + '"><nav class="opt-list" aria-label="설정">' + rows + '</nav><section class="opt-detail">' + detail(ui.sel) + '</section></div>';
-      var tm = p.timer === 'pace' ? fmt(n * SEC_PER_Q) : p.timer === 'custom' ? p.mins + '분' : p.timer === 'up' ? '시간 재기' : '';
+      var tm = p.timer === 'pace' ? fmt(n * SEC_PER_Q) : p.timer === 'custom' ? p.mins + '분' : '시간 제한 없음';
       bar = '<div class="startbar"><div class="startbar-in"><div class="sb-info">' +
         (n ? '<b>' + n + '문제</b>' + (tm ? '<span>' + tm + '</span>' : '') + '<span>' + esc(pick(CHECKS, p.check)[1]) + '</span>' : '<span>조건에 맞는 문제가 없어요</span>') +
         '</div><button type="button" class="pill" data-a="start"' + (n ? '' : ' disabled') + '>시작하기</button></div></div>';
@@ -1303,6 +1314,7 @@
         '<div class="mrow"><span>Text size</span><span class="fs"><button data-a="font" data-v="-1"' + (S.font <= 0 ? ' disabled' : '') + ' aria-label="Smaller text">A−</button>' +
         '<button data-a="font" data-v="1"' + (S.font >= FONTS.length - 1 ? ' disabled' : '') + ' aria-label="Larger text">A+</button></span></div>' +
         (rev ? '' : '<button data-a="info">' + (S.info ? 'Hide question type' : 'Show question type') + '</button>') +
+        (!rev && isLimited(S.tmode) ? '<button data-a="nolimit">시간 제한 풀기</button>' : '') +
         '<button data-a="keys">Keyboard shortcuts</button><button data-a="exit">' + (rev ? '처음 화면으로' : 'Exit practice') + '</button></div>';
     }
 
@@ -1435,7 +1447,7 @@
     else if (kind === 'pdfwait') { t = 'PDF 준비 중'; p = 'College Board에서 문제를 불러오는 중 <span id="pdfc">0</span> / ' + arg; acts = []; }
     else if (kind === 'pdffail') { t = '문제를 불러오지 못했어요'; p = '잠시 뒤 다시 시도해 주세요.'; acts = [['close', '닫기', '']]; }
     else
-    if (kind === 'timeup') { t = "Time's up"; p = '시간이 끝났어요. 실제 시험은 여기서 자동 제출돼요.'; acts = [['close', '계속 풀기', 'light'], ['dosubmit', '제출하기', '']]; }
+    if (kind === 'timeup') { t = "Time's up"; p = '시간이 끝났어요. 실제 시험은 여기서 자동 제출돼요.'; acts = [['nolimit', '제한 없이 계속', 'light'], ['dosubmit', '제출하기', '']]; }
     else if (kind === 'submit') { t = '제출할까요?'; p = '답하지 않은 문제가 ' + unanswered + '개 있어요. 답하지 않은 문제는 틀린 것으로 기록돼요.'; acts = [['close', '돌아가기', 'light'], ['dosubmit', '제출하기', '']]; }
     else if (kind === 'exit') { t = '연습을 그만둘까요?'; p = '지금까지 고른 답은 기록되지 않아요.'; acts = [['close', '계속 풀기', 'light'], ['home', '그만두기', '']]; }
     else if (kind === 'clear') { t = '기록을 지울까요?'; p = '푼 기록, 오답노트(별표, 헷갈림, 메모), 최근 기록이 모두 지워져요. 단어장은 그대로예요.<br>먼저 백업해 두면 나중에 되돌릴 수 있어요.'; acts = [['close', '취소', 'light'], ['doclear', '지우기', '']]; }
@@ -1533,6 +1545,7 @@
     if (a === 'reload') { showHome(); return; }
     if (a === 'opt') {
       p[k] = k === 'count' ? +v : v;
+      if (k === 'timer') { if (isLimited(v)) p.lastLimit = v; else p.lastFree = v; }
       if (k === 'ev') {
         save(); renderHome();
         loadList(v).then(function () { renderHome(); }, function () { if (store.prefs.ev === v) renderHome(true); });
@@ -1595,6 +1608,12 @@
 
     if (a === 'close') { closeModal(); }
     else if (a === 'dosubmit') { closeModal(); submit(); return; }
+    else if (a === 'nolimit') {                                 // keep going with a clock that counts up from the start
+      closeModal();
+      S.tmode = 'up'; S.hide = false;
+      startTimer();
+      toast('시간 제한을 풀었어요');
+    }
     else if (a === 'dir') S.dir = !S.dir;
     else if (a === 'more') S.more = !S.more;
     else if (a === 'nav') S.nav = !S.nav;
@@ -1647,7 +1666,13 @@
   app.addEventListener('change', function (e) {
     if (view !== 'home') return;
     var a = e.target.getAttribute('data-a'), k = e.target.getAttribute('data-k');
-    if (a === 'sw') { store.prefs[k] = e.target.checked; save(); renderHome(); }
+    if (a === 'sw' && k === 'limit') {
+      var pp = store.prefs;
+      if (e.target.checked) pp.timer = isLimited(pp.lastLimit) ? pp.lastLimit : 'pace';
+      else { if (isLimited(pp.timer)) pp.lastLimit = pp.timer; pp.timer = pp.lastFree === 'off' ? 'off' : 'up'; }
+      save(); renderHome();
+    }
+    else if (a === 'sw') { store.prefs[k] = e.target.checked; save(); renderHome(); }
     else if (a === 'num') { store.prefs.count = clampCount(+e.target.value || 1); save(); renderHome(); }
   });
   var memoT = null;
