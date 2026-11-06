@@ -294,6 +294,8 @@
     book: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 8h7M9 11.5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
     down2: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     up2: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 9.5l5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    note: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v11l-5 5H5z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M14 20v-5h5M8.5 9h7M8.5 12.5h4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    trash: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     sound: '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
   };
   function starBtn(ext, a) {
@@ -850,7 +852,10 @@
   function stripUw(html) {
     var d = document.createElement('div');
     d.innerHTML = html;
-    Array.prototype.forEach.call(d.querySelectorAll('.uw'), function (u) { u.parentNode.replaceChild(document.createTextNode(u.textContent), u); });
+    Array.prototype.forEach.call(d.querySelectorAll('.uw'), function (u) {   // keep what's inside (a highlight may sit in a saved word)
+      while (u.firstChild) u.parentNode.insertBefore(u.firstChild, u);
+      u.parentNode.removeChild(u);
+    });
     d.normalize();
     return d.innerHTML;
   }
@@ -1236,7 +1241,7 @@
       if (flagPool) ready.forEach(function (x, j) { if (store.flag[x.ext]) mark[j] = true; });
       S = {
         items: ready, i: 0, ans: {}, mark: mark, elim: {}, hl: {}, checked: {}, rec: {}, ev: p.ev, phase: 'test',
-        elimMode: false, annotate: false, nav: false, dir: false, more: false, hide: false,
+        elimMode: false, hn: {}, hlSel: null, hlNote: null, nav: false, dir: false, more: false, hide: false,
         tmode: p.timer, left: p.timer === 'custom' ? p.mins * 60 : ready.length * SEC_PER_Q, auto: p.auto,
         instant: p.check === 'instant', info: p.info, font: p.font, flagPool: flagPool,
         start: Date.now(), end: 0, split: 50, label: label, dropped: items.length - ready.length
@@ -1300,7 +1305,7 @@
     }
     top += '</div><div class="bb-top-r">' +
       (S.phase === 'check' ? '' : '<button class="bb-tool' + (S.wordMode ? ' on' : '') + '" data-a="wordmode" aria-pressed="' + !!S.wordMode + '" title="Tap a word you didn\'t know to save it">' + I.book + '<span>Words</span></button>') +
-      (S.phase === 'check' ? '' : '<button class="bb-tool' + (S.annotate ? ' on' : '') + '" data-a="annotate" aria-pressed="' + S.annotate + '" title="Select passage text to highlight it">' + I.pen + '<span>Highlights &amp; Notes</span></button>') +
+      (S.phase === 'check' ? '' : '<button class="bb-tool" data-a="annotate" title="Select text, then use this to add a note">' + I.pen + '<span>Highlights &amp; Notes</span></button>') +
       '<button class="bb-tool" data-a="more" aria-expanded="' + S.more + '">' + I.dots + '<span>More</span></button></div></header><div class="dash"></div>';
 
     var pops = '';
@@ -1324,7 +1329,7 @@
         '<p>Before you submit, look over any questions you marked for review or left unanswered. Select a question number to go back to it.</p>' +
         '<div class="bb-check-card"><div class="bb-navhead"><b>Section 1: Reading and Writing Questions</b></div>' + legend() + grid() + '</div></div></main>';
     } else {
-      var showAns = graded(S.i), passage = q.stim ? (S.hl[S.i] || q.stim) : '';
+      var saved = S.hl[S.i] || {}, showAns = graded(S.i), passage = q.stim ? (saved.p || q.stim) : '';
       var tag = sk.name + ' · ' + DIFF_EN[x.d];
       var keepTools = '<span class="bb-keep">' + starBtn(x.ext, 'star') + confBtn(x.ext, 'conf') + '</span>';
       var head = '<div class="bb-qhead"><span class="bb-qnum">' + (S.i + 1) + '</span>' +
@@ -1361,7 +1366,7 @@
       }
       mid = '<main class="bb-main' + (passage ? '' : ' single') + '" style="--split:' + S.split + '%">' +
         (passage ? '<section class="bb-pane bb-left"><div class="bb-passage">' + passage + '</div></section><div class="bb-divider" title="Drag to resize"><span class="bb-grip">' + I.grip + '</span></div>' : '') +
-        '<section class="bb-pane bb-right">' + head + '<div class="bb-stem">' + q.stem + '</div>' + choices + after + '</section></main>';
+        '<section class="bb-pane bb-right">' + head + '<div class="bb-stem">' + (saved.s || q.stem) + '</div>' + choices + after + '</section></main>';
     }
 
     var foot = '<div class="dash"></div><footer class="bb-foot"><div class="bb-foot-l">' +
@@ -1376,8 +1381,9 @@
     }
     foot += '</footer>';
 
-    app.innerHTML = '<div class="bb' + (S.annotate ? ' annotate' : '') + (S.wordMode ? ' wordmode' : '') + '" style="--fs:' + FONTS[S.font][0] + 'px">' + top + pops + mid + foot + '</div>';
+    app.innerHTML = '<div class="bb' + (S.wordMode ? ' wordmode' : '') + '" style="--fs:' + FONTS[S.font][0] + 'px">' + top + pops + mid + foot + '</div>';
     applyWordMarks(app);
+    if (S.hlNote) hlNote(S.hlNote, false);                        // an open note stays open; it closes itself on another question
     S._shown = S.i + ':' + S.phase;
     if (keep) {
       var l1 = $('.bb-left'), r1 = $('.bb-right'), m1 = $('.bb-main');
@@ -1581,15 +1587,24 @@
   app.addEventListener('click', function (e) {
     if (e.target.classList && e.target.classList.contains('bb-modal-bg')) { closeModal(); return; }
     if (wordActive() && !e.target.closest('.bb-modal-bg, .fc-bg') && pickWord(e)) return;
-    var hl = e.target.closest('mark.hl');
-    if (hl && S && S.annotate && !window.getSelection().toString()) { unwrap(hl); return; }   // tap a highlight to remove it
+    var popWasOpen = !!$('.hl-pop');
+    if (view === 'test' && S && !e.target.closest('.hl-pop')) {
+      var hl = e.target.closest('mark.hl'), sel0 = window.getSelection();
+      if (hl && !S.wordMode && (!sel0 || sel0.isCollapsed)) {         // tap a highlight: its toolbar (and its note, if any)
+        var hid = hl.getAttribute('data-id');
+        hlPop(hid);
+        if (S.hn[hid]) hlNote(hid, false);
+        return;
+      }
+      if (Date.now() - (S.hlJust || 0) > 300) closeHlPop();
+    }
     var t = e.target.closest('[data-a]');
     if (!t || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
     var a = t.getAttribute('data-a'), v = t.getAttribute('data-v');
 
     if (view === 'home') { homeClick(a, t.getAttribute('data-k'), v); return; }
     if (view === 'result') {
-      if (a === 'open') { S.phase = 'answers'; S.i = +v; view = 'test'; S.annotate = false; renderTest(); window.scrollTo(0, 0); }
+      if (a === 'open') { S.phase = 'answers'; S.i = +v; view = 'test'; renderTest(); window.scrollTo(0, 0); }
       else if (a === 'retrywrong') startTest(S.items.filter(function (x, j) { return S.ans[j] !== qcache[x.ext].key; }), S.label.replace(/, 틀린 문제 다시$/, '') + ', 틀린 문제 다시');
       else if (a === 'again') startTest(buildSet());
       else if (a === 'home') showHome();
@@ -1598,6 +1613,14 @@
     }
     if (a === 'home') { closeModal(); showHome(); return; }
     if (!S) return;
+    if (/^hl/.test(a)) { hlAction(a, v); return; }
+    if (a === 'annotate') {                                       // Bluebook: the button adds a note to the selection
+      var s1 = window.getSelection(), before = hlSeq;
+      if (s1 && !s1.isCollapsed && s1.rangeCount && hlArea(s1.getRangeAt(0).commonAncestorContainer)) highlightSelection();
+      if (hlSeq !== before || (popWasOpen && S.hlSel && hlMarks(S.hlSel).length)) { closeHlPop(); hlNote(S.hlSel, true); }
+      else toast('먼저 지문이나 문제에서 글을 선택하세요');
+      return;
+    }
 
     // popups close when anything else is chosen
     var keepNav = a === 'nav' || a === 'goto', keepMore = a === 'more' || a === 'font' || a === 'info', keepDir = a === 'dir';
@@ -1618,10 +1641,9 @@
     else if (a === 'more') S.more = !S.more;
     else if (a === 'nav') S.nav = !S.nav;
     else if (a === 'hide') S.hide = !S.hide;
-    else if (a === 'annotate') { S.annotate = !S.annotate; if (S.annotate) S.wordMode = false; }
     else if (a === 'wordmode') {
       S.wordMode = !S.wordMode;
-      if (S.wordMode) { S.annotate = false; toast('모르는 단어를 누르면 단어장에 저장돼요'); }
+      if (S.wordMode) toast('모르는 단어를 누르면 단어장에 저장돼요');
     }
     else if (a === 'font') { S.font = Math.max(0, Math.min(FONTS.length - 1, S.font + (+v))); store.prefs.font = S.font; save(); }
     else if (a === 'info') { S.info = !S.info; store.prefs.info = S.info; save(); }
@@ -1677,6 +1699,12 @@
   });
   var memoT = null;
   app.addEventListener('input', function (e) {
+    if (view === 'test' && S && e.target.getAttribute('data-a') === 'hlnote') {
+      var nid = e.target.getAttribute('data-v');
+      S.hn[nid] = e.target.value.slice(0, 2000);
+      markNoteState(nid);
+      return;
+    }
     if (view !== 'home') return;
     var ia = e.target.getAttribute('data-a');
     if (ia === 'wmy') {
@@ -1706,28 +1734,117 @@
     if (row) row.textContent = f.items.length ? f.items.length + '문제' : '';
   });
 
-  // Highlights: with "Highlights & Notes" on, selecting passage text marks it
-  function unwrap(m) {
-    var p = m.parentNode;
-    while (m.firstChild) p.insertBefore(m.firstChild, m);
-    p.removeChild(m);
-    p.normalize();
-    var box = $('.bb-passage'); if (box && S) S.hl[S.i] = stripUw(box.innerHTML);
+  /* Highlights & Notes, the Bluebook way: selecting passage or question text highlights it (yellow) and opens a small
+     toolbar for color, underline, a note, or delete; clicking a highlight brings the toolbar back. Kept for this test only. */
+  var HLC = ['yellow', 'blue', 'pink'], hlSeq = 0;
+  function hlArea(node) {
+    var el = node && (node.nodeType === 3 ? node.parentNode : node);
+    return el && el.closest ? el.closest('.bb-passage, .bb-stem') : null;
+  }
+  function hlMarks(id) { return app.querySelectorAll('mark.hl[data-id="' + id + '"]'); }
+  function saveHl(area) {
+    if (!area || !S) return;
+    (S.hl[S.i] = S.hl[S.i] || {})[area.classList.contains('bb-stem') ? 's' : 'p'] = stripUw(area.innerHTML);
+  }
+  // wrap each text piece inside the range on its own, so a highlight can cross paragraphs without breaking them
+  function wrapRange(r, id, area) {
+    var nodes = [], tw = document.createTreeWalker(area, NodeFilter.SHOW_TEXT, null);
+    while (tw.nextNode()) {
+      var n = tw.currentNode;
+      if (r.intersectsNode(n) && n.nodeValue.trim() && !n.parentNode.closest('.sr-only, svg')) nodes.push(n);
+    }
+    var made = 0;
+    nodes.forEach(function (n) {
+      var s = n === r.startContainer ? r.startOffset : 0, e = n === r.endContainer ? r.endOffset : n.nodeValue.length;
+      if (e <= s || !n.nodeValue.slice(s, e).trim()) return;
+      var mid = n.splitText(s);
+      mid.splitText(e - s);
+      var mk = document.createElement('mark');
+      mk.className = 'hl c-yellow';
+      mk.setAttribute('data-id', id);
+      mid.parentNode.replaceChild(mk, mid);
+      mk.appendChild(mid);
+      made++;
+    });
+    return made;
+  }
+  function closeHlPop() { var p = $('.hl-pop'); if (p) p.parentNode.removeChild(p); }
+  function hlPop(id) {
+    closeHlPop();
+    var ms = hlMarks(id);
+    if (!ms.length) return;
+    S.hlSel = id;
+    var first = ms[0], cur = (first.className.match(/c-(\w+)/) || [])[1], ul = first.classList.contains('ul');
+    app.insertAdjacentHTML('beforeend', '<div class="hl-pop" role="toolbar" aria-label="Highlight options">' +
+      HLC.map(function (c) { return '<button class="hl-sw c-' + c + (cur === c ? ' on' : '') + '" data-a="hlc" data-v="' + c + '" aria-label="' + c + ' highlight" aria-pressed="' + (cur === c) + '"></button>'; }).join('') +
+      '<span class="hl-sep"></span><button class="hl-btn' + (ul ? ' on' : '') + '" data-a="hlu" aria-label="Underline" aria-pressed="' + ul + '"><u>U</u></button>' +
+      '<button class="hl-btn" data-a="hln" aria-label="Note">' + I.note + '</button><button class="hl-btn" data-a="hld" aria-label="Delete highlight">' + I.trash + '</button></div>');
+    var pop = $('.hl-pop'), rect = first.getBoundingClientRect(), pw = pop.offsetWidth;
+    var x = Math.max(8, Math.min(window.innerWidth - pw - 8, rect.left + rect.width / 2 - pw / 2)), y = rect.top - pop.offsetHeight - 10;
+    if (y < 8) y = ms[ms.length - 1].getBoundingClientRect().bottom + 10;
+    pop.style.left = x + 'px';
+    pop.style.top = y + 'px';
+  }
+  function closeNote() { var n = $('.hl-note'); if (n) n.parentNode.removeChild(n); }
+  function hlNote(id, focus) {
+    closeNote();
+    var ms = hlMarks(id);
+    if (!ms.length) { S.hlNote = null; return; }
+    S.hlNote = id;
+    var quote = Array.prototype.map.call(ms, function (m) { return m.textContent; }).join(' ').replace(/\s+/g, ' ').trim();
+    app.insertAdjacentHTML('beforeend', '<div class="hl-note" role="dialog" aria-label="Note"><div class="hl-note-h"><b>Note</b><button class="bb-close" data-a="hlnclose" aria-label="Close">×</button></div>' +
+      '<p class="hl-q">“' + esc(quote.length > 140 ? quote.slice(0, 140) + '…' : quote) + '”</p>' +
+      '<textarea data-a="hlnote" data-v="' + id + '" placeholder="Type a note">' + esc(S.hn[id] || '') + '</textarea>' +
+      '<div class="hl-note-acts"><button class="bb-btn light" data-a="hlndel">Delete</button><button class="bb-btn" data-a="hlnclose">Save</button></div></div>');
+    if (focus) { var ta = $('.hl-note textarea'); if (ta) ta.focus(); }
+  }
+  function markNoteState(id) {
+    var has = !!(S.hn[id] && S.hn[id].trim()), ms = hlMarks(id);
+    Array.prototype.forEach.call(ms, function (m) { m.classList.toggle('has-note', has); });
+    if (ms.length) saveHl(hlArea(ms[0]));
+  }
+  function hlAction(a, v) {
+    var id = a === 'hlndel' ? S.hlNote : S.hlSel, ms = id ? hlMarks(id) : [];
+    if (a === 'hlnclose') { S.hlNote = null; closeNote(); return; }
+    if (!ms.length) { closeHlPop(); return; }
+    var area = hlArea(ms[0]);
+    if (a === 'hlc') {
+      Array.prototype.forEach.call(ms, function (m) { HLC.forEach(function (c) { m.classList.remove('c-' + c); }); m.classList.add('c-' + v); });
+      saveHl(area); hlPop(id);
+    } else if (a === 'hlu') {
+      var on = !ms[0].classList.contains('ul');
+      Array.prototype.forEach.call(ms, function (m) { m.classList.toggle('ul', on); });
+      saveHl(area); hlPop(id);
+    } else if (a === 'hln') { closeHlPop(); hlNote(id, true); }
+    else if (a === 'hld') {
+      Array.prototype.forEach.call(ms, function (m) {
+        var p = m.parentNode;
+        while (m.firstChild) p.insertBefore(m.firstChild, m);
+        p.removeChild(m);
+      });
+      area.normalize();
+      delete S.hn[id];
+      saveHl(area);
+      closeHlPop();
+      if (S.hlNote === id) { S.hlNote = null; closeNote(); }
+    } else if (a === 'hlndel') { delete S.hn[id]; markNoteState(id); S.hlNote = null; closeNote(); }
   }
   function highlightSelection() {
-    if (!S || !S.annotate) return;
+    if (!S || view !== 'test' || S.wordMode || (S.phase !== 'test' && S.phase !== 'answers')) return;
     var sel = window.getSelection();
-    if (!sel || !sel.rangeCount || sel.isCollapsed) return;
-    var box = $('.bb-passage'), r = sel.getRangeAt(0);
-    if (!box || !box.contains(r.commonAncestorContainer)) return;
-    var mk = document.createElement('mark');
-    mk.className = 'hl';
-    try { r.surroundContents(mk); } catch (err) { mk.appendChild(r.extractContents()); r.insertNode(mk); }
+    if (!sel || !sel.rangeCount || sel.isCollapsed || !sel.toString().trim()) return;
+    var r = sel.getRangeAt(0), area = hlArea(r.commonAncestorContainer);
+    if (!area) return;                                            // only inside one passage or one question
+    var id = 'h' + (++hlSeq);
+    if (!wrapRange(r, id, area)) return;
     sel.removeAllRanges();
-    S.hl[S.i] = stripUw(box.innerHTML);
+    saveHl(area);
+    S.hlJust = Date.now();
+    hlPop(id);
   }
-  app.addEventListener('mouseup', highlightSelection);
-  app.addEventListener('touchend', function () { setTimeout(highlightSelection, 30); });
+  app.addEventListener('mouseup', function () { setTimeout(highlightSelection, 0); });
+  app.addEventListener('touchend', function () { setTimeout(highlightSelection, 60); });
+  app.addEventListener('scroll', closeHlPop, true);
 
   // drag the divider between passage and question, like Bluebook
   app.addEventListener('pointerdown', function (e) {
@@ -1752,6 +1869,7 @@
       return;
     }
     if (!S || view !== 'test' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'Escape' && (S.hlNote || $('.hl-pop'))) { closeHlPop(); S.hlNote = null; closeNote(); return; }
     if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
     if (e.key === 'Escape') {
       if ($('.bb-modal-bg')) closeModal(); else if (S.nav || S.more || S.dir) { S.nav = S.more = S.dir = false; renderTest(); }
