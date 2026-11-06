@@ -33,8 +33,9 @@
   var DIFF_EN = { E: 'Easy', M: 'Medium', H: 'Hard' }, DIFF_KO = { E: '쉬움', M: '보통', H: '어려움' };
   var BANDS = [1, 2, 3, 4, 5, 6, 7];
   var FONTS = [[15, '작게'], [17, '보통'], [19, '크게'], [21, '아주 크게']];
-  var POOLS = [['new', '안 푼 문제 먼저'], ['unseen', '안 푼 문제만'], ['wrong', '틀린 문제만'], ['right', '맞힌 문제만'], ['star', '별표 문제만'], ['flag', '헷갈린 문제만'], ['any', '상관없이 무작위']];
-  var NFILTERS = [['now', '아직 틀림'], ['fixed', '다시 맞힘'], ['star', '별표'], ['flag', '헷갈림'], ['all', '전체']];
+  var POOLS = [['new', '안 푼 문제 먼저'], ['unseen', '안 푼 문제만'], ['ever', '틀린 적 있는 문제'], ['wrong', '아직 틀린 문제만'], ['right', '맞힌 문제만'], ['star', '별표 문제만'], ['flag', '헷갈린 문제만'], ['any', '상관없이 무작위']];
+  // 오답 전체 = every question ever missed (still wrong + fixed since); the other two split it
+  var NFILTERS = [['wrong', '오답 전체'], ['now', '아직 틀림'], ['fixed', '다시 맞힘'], ['star', '별표'], ['flag', '헷갈림'], ['all', '전체']];
   var ORDERS = [['random', '무작위'], ['easy', '쉬운 문제부터'], ['hard', '어려운 문제부터'], ['test', '실제 시험 순서', '유형 순서대로, 같은 유형은 쉬운 문제부터']];
   var LIMITED = [['pace', '실제 시험 속도', '문제당 71초 (27문제 32분)'], ['custom', '직접 정하기']];
   var FREE = [['up', '걸린 시간 보기'], ['off', '시계 숨기기']];
@@ -110,6 +111,7 @@
     L.id = x.id; L.sk = x.sk; L.d = x.d; L.ev = ev; L.k = key; L.n++; L.t = Date.now();
     if (good) L.s = (L.s || 0) + 1;
     else { L.w++; L.s = 0; L.a = mine || ''; L.tw = L.t; }
+    L.h = (L.h || []).concat([[L.t, mine || '-', good ? 1 : 0]]).slice(-20);   // each attempt: [time, answer, right?]
   }
 
   /* ───────── College Board data ───────── */
@@ -310,7 +312,7 @@
   /* ───────── filtering ───────── */
   var view = 'home', S = null, timerId = null;
   var ui = {
-    sel: 'area', open: false, ids: '', tab: 'solve', nf: 'now', nsk: '', nsort: 'recent', note: null, noteOpen: false, rev: {}, tried: {}, busy: false,
+    sel: 'area', open: false, ids: '', tab: 'solve', nf: 'wrong', nsk: '', nsort: 'recent', note: null, noteOpen: false, rev: {}, tried: {}, busy: false,
     wordMode: false, wf: 'learn', wq: '', wsort: 'recent', word: null, wordOpen: false, fc: null, pending: null, goBackup: false
   };
   function cur() { return lists[store.prefs.ev] || []; }
@@ -332,6 +334,7 @@
     var r = store.res[x.ext];
     if (kind === 'unseen') return r === undefined;
     if (kind === 'wrong') return r === 0;
+    if (kind === 'ever') return r === 0 || !!(store.log[x.ext] && store.log[x.ext].w);
     if (kind === 'right') return r === 1;
     if (kind === 'flag') return !!store.flag[x.ext];
     if (kind === 'star') return !!store.star[x.ext];
@@ -568,10 +571,11 @@
     return {
       ext: ext, id: L.id || (x && x.id) || '', sk: sk, d: L.d || (x && x.d) || 'M', ev: L.ev || '99',
       n: L.n || 0, w: L.w || (store.res[ext] === 0 ? 1 : 0), s: L.s || 0, a: L.a, k: L.k || (qcache[ext] && qcache[ext].key),
-      t: L.tw || L.t || 0, res: store.res[ext], star: !!store.star[ext], flag: !!store.flag[ext], memo: store.memo[ext] || ''
+      t: L.tw || L.t || 0, res: store.res[ext], star: !!store.star[ext], flag: !!store.flag[ext], memo: store.memo[ext] || '', h: L.h || []
     };
   }
   function nMatch(f, e) {
+    if (f === 'wrong') return e.res === 0 || e.w > 0;
     if (f === 'now') return e.res === 0;
     if (f === 'fixed') return e.res === 1 && e.w > 0;
     if (f === 'star') return e.star;
@@ -590,18 +594,37 @@
     list.sort(ui.nsort === 'many' ? function (a, b) { return b.w - a.w || b.t - a.t; } : function (a, b) { return b.t - a.t; });
     return { all: all, inF: inF, list: list };
   }
-  function nowCount() { var n = 0; for (var k in store.res) if (store.res[k] === 0) n++; return n; }
+  function wrongCount() {                                         // questions ever missed (the 오답노트 tab badge)
+    var n = 0, seen = {};
+    for (var k in store.res) if (store.res[k] === 0) { seen[k] = 1; n++; }
+    for (var j in store.log) if (store.log[j].w && !seen[j]) n++;
+    return n;
+  }
   function dateStr(t) { var d = new Date(t); return (d.getMonth() + 1) + '/' + d.getDate(); }
   function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function noteCard(e) {
-    var q = qcache[e.ext];
-    var ans = e.res === 1 && e.w ? '<span class="nc-ok">다시 맞힘' + (e.s > 1 ? ' ' + e.s + '번 연속' : '') + '</span>'
-      : e.res === 0 && e.k ? (e.a !== undefined ? '<span class="nc-bad">' + (e.a ? '내 답 ' + e.a : '답 안 함') + '</span>' : '') + '<span>정답 ' + e.k + '</span>' : '<span></span>';
+    var q = qcache[e.ext], fixed = e.res === 1 && e.w > 0;
+    var status = fixed ? '<span class="nc-ok">다시 맞힘' + (e.s > 1 ? ' ' + e.s + '번 연속' : '') + '</span>'
+      : e.res === 0 ? '<span class="nc-bad">아직 틀림</span>' + (e.k ? '<span>' + (e.a ? '내 답 ' + e.a + ' → ' : e.a === '' ? '답 안 함 → ' : '') + '정답 ' + e.k + '</span>' : '')
+      : '<span></span>';
     return '<button type="button" class="ncard' + (ui.note === e.ext ? ' on' : '') + '" data-a="nsel" data-v="' + e.ext + '">' +
       '<span class="nc-top"><b>' + esc(SK[e.sk].name) + '</b><span class="nc-d">' + DIFF_EN[e.d] + '</span><span class="nc-ic">' +
-      (e.star ? '<i class="ic-star">★</i>' : '') + (e.flag ? I.flag : '') + (e.memo ? '<i class="ic-memo">메모</i>' : '') + '</span></span>' +
+      (e.star ? '<i class="ic-star">★</i>' : '') + (e.flag ? I.flag : '') + (e.memo ? '<i class="ic-memo">메모</i>' : '') +
+      (e.w ? '<span class="nc-cnt">' + e.w + '번 틀림</span>' : '') + '</span></span>' +
       (q ? '<span class="nc-snip">' + esc(q.text.slice(0, 120)) + '</span>' : '') +
-      '<span class="nc-meta">' + ans + '<span class="nc-w">' + (e.w ? e.w + '번 틀림  ' : '') + (e.t ? dateStr(e.t) : '') + '</span></span></button>';
+      '<span class="nc-meta">' + status + '<span class="nc-w">' + (e.t ? dateStr(e.t) : '') + '</span></span></button>';
+  }
+  // the attempt timeline: date, the answer picked, right or wrong
+  function histHtml(e) {
+    var sum = e.n ? e.n + '번 풀어서 ' + e.w + '번 틀림' : e.w ? e.w + '번 틀림' : '';
+    sum += e.res === 1 && e.w ? ', 지금은 맞힘' : e.res === 0 ? ', 아직 틀림' : '';
+    var h = e.h || [];
+    return '<div class="nd-hist"><span>' + sum + '</span>' + (h.length ? '<span class="nd-tl">' + h.slice(-12).map(function (x) {
+      return '<i class="' + (x[2] ? 'ok' : 'bad') + '" title="' + dateStr(x[0]) + ' ' + timeStr(x[0]) + '">' + dateStr(x[0]) + ' ' + (x[1] === '-' ? '답 없음' : x[1]) + (x[2] ? ' ✓' : ' ✗') + '</i>';
+    }).join('') + '</span>' : '') + '</div>';
+  }
+  function histText(e) {
+    return (e.h || []).slice(-12).map(function (x) { return dateStr(x[0]) + ' ' + (x[1] === '-' ? '없음' : x[1]) + (x[2] ? '✓' : '✗'); }).join('   ');
   }
   function cardsHtml(list) { return list.length ? list.map(noteCard).join('') : '<p class="n-none">이 조건에 맞는 문제가 없어요</p>'; }
   // question snippets for the cards, fetched quietly a batch at a time
@@ -626,9 +649,7 @@
     var h = '<div class="d-top"><button type="button" class="d-back" data-a="nback">' + I.left + '목록</button>' +
       '<div class="nd-title"><b>' + esc(SK[e.sk].name) + '</b><span>' + DIFF_EN[e.d] + (e.id ? '  ID ' + esc(e.id) : '') + '</span></div>' +
       '<div class="d-tools"><button type="button" class="kp kp-word' + (ui.wordMode ? ' on' : '') + '" data-a="nword" aria-pressed="' + ui.wordMode + '" title="모르는 단어를 눌러 단어장에 저장">' + I.book + '<span>단어</span></button>' +
-      starBtn(ext, 'nstar') + confBtn(ext, 'nconf') + '</div></div>' +
-      '<p class="nd-hist">' + (e.n ? e.n + '번 풀어서 ' + e.w + '번 틀림' : e.w ? '틀린 문제' : '') +
-      (e.w && e.a !== undefined ? ', 마지막 오답 ' + (e.a || '답 안 함') : '') + (e.res === 1 && e.w ? ', 지금은 맞힘' : '') + '</p>';
+      starBtn(ext, 'nstar') + confBtn(ext, 'nconf') + '</div></div>' + histHtml(e);
     if (!q) {
       if (ui.tried[ext] === 2) return h + failHtml(false).replace('data-a="reload"', 'data-a="nload" data-v="' + ext + '"');
       loadQ(ext).catch(function () { return loadQ(ext); }).then(function () { refreshDetail(ext); }, function () { ui.tried[ext] = 2; refreshDetail(ext); });
@@ -689,24 +710,29 @@
   // PDF: the browser's print dialog ("PDF로 저장") prints a page built from the live questions
   function printHtml(es, full) {
     var label = pick(NFILTERS, ui.nf)[1] + (ui.nsk ? ', ' + SK[ui.nsk].name : '');
-    var h = '<header class="pr-h"><h1>SAT Reading and Writing 오답노트</h1><p>' + today() + '   ' + esc(label) + '   ' + es.length + '문제' + (full ? '' : '   (정답은 맨 뒤)') + '</p></header>';
+    var nNow = es.filter(function (e) { return e.res === 0; }).length, nFixed = es.filter(function (e) { return e.res === 1 && e.w > 0; }).length;
+    var split = nNow && nFixed ? '   (아직 틀림 ' + nNow + ', 다시 맞힘 ' + nFixed + ')' : '';
+    var h = '<header class="pr-h"><h1>SAT Reading and Writing 오답노트</h1><p>' + today() + '   ' + esc(label) + '   ' + es.length + '문제' + split + (full ? '' : '   정답은 맨 뒤') + '</p></header>';
     h += es.map(function (e, i) {
-      var q = qcache[e.ext], mine = e.res === 0 ? e.a : undefined;
+      var q = qcache[e.ext], mine = e.w && e.a ? e.a : '';            // the last wrong answer, if known
       var ch = '<ol class="pr-ch">' + q.opts.map(function (o, k) {
         var L = 'ABCD'.charAt(k), key = full && L === q.key, my = full && mine && L === mine;
         return '<li class="' + (key ? 'key' : my ? 'my' : '') + '"><b>' + L + '</b><span>' + o + '</span>' +
-          (key ? '<em class="pr-mk ok">정답</em>' : my ? '<em class="pr-mk bad">내 답</em>' : '') + '</li>';
+          (key ? '<em class="pr-mk ok">정답</em>' : my ? '<em class="pr-mk bad">내 오답</em>' : '') + '</li>';
       }).join('') + '</ol>';
-      var meta = [SK[e.sk].name, DIFF_EN[e.d]].concat(e.w ? [e.w + '번 틀림'] : [], e.star ? ['★'] : [], e.flag ? ['헷갈림'] : []).join(', ');
+      var status = e.res === 0 ? '아직 틀림' : e.res === 1 && e.w ? '다시 맞힘' : '';
+      var meta = [SK[e.sk].name, DIFF_EN[e.d]].concat(e.w ? [e.w + '번 틀림'] : [], status ? [status] : [], e.star ? ['★'] : [], e.flag ? ['헷갈림'] : []).join(', ');
+      var hist = histText(e);
       return '<section class="pr-q"><div class="pr-qh"><b>' + (i + 1) + '</b><span>' + esc(meta) + '</span><span class="pr-id">' + (e.id ? 'ID ' + esc(e.id) : '') + '</span></div>' +
         (q.stim ? '<div class="pr-pass">' + q.stim + '</div>' : '') + '<div class="pr-stem">' + q.stem + '</div>' + ch +
-        (full ? '<div class="pr-why"><div class="pr-why-h">정답 ' + q.key + (mine !== undefined ? ', 내 답 ' + (mine || '없음') : '') + '</div>' + q.why + '</div>' +
+        (full ? '<div class="pr-why"><div class="pr-why-h">정답 ' + q.key + (mine ? ', 마지막 오답 ' + mine : '') + (e.n ? ', ' + e.n + '번 풀어서 ' + e.w + '번 틀림' : '') + '</div>' +
+          (hist ? '<div class="pr-hist">풀이 기록   ' + hist + '</div>' : '') + q.why + '</div>' +
           (store.memo[e.ext] ? '<div class="pr-memo"><b>메모</b> ' + esc(store.memo[e.ext]) + '</div>' : '') : '') + '</section>';
     }).join('');
     if (!full) {
       h += '<section class="pr-key"><h2>정답</h2><ol class="pr-keylist">' + es.map(function (e, i) {
-        var mine = e.res === 0 ? e.a : undefined;
-        return '<li><span>' + (i + 1) + '.</span> <b>' + qcache[e.ext].key + '</b>' + (mine !== undefined ? ' <small>(내 답 ' + (mine || '없음') + ')</small>' : '') + '</li>';
+        var mine = e.w && e.a ? e.a : '';
+        return '<li><span>' + (i + 1) + '.</span> <b>' + qcache[e.ext].key + '</b>' + (e.w ? ' <small>(' + (mine ? '오답 ' + mine + ', ' : '') + e.w + '번 틀림)</small>' : '') + '</li>';
       }).join('') + '</ol></section>';
     }
     return '<div class="pr">' + h + '<p class="pr-src">문제와 해설 출처: College Board SAT Suite Question Bank. 개인 학습용으로 인쇄한 자료예요.</p></div>';
@@ -722,7 +748,7 @@
       var box = document.getElementById('print');
       if (!box) { box = document.createElement('div'); box.id = 'print'; document.body.appendChild(box); }
       box.innerHTML = printHtml(ok, full);
-      var t0 = document.title;
+      var t0 = document.title.indexOf('SAT 오답노트') === 0 ? 'SAT Bluebook 연습' : document.title;   // a second print before the first finished
       document.title = 'SAT 오답노트 ' + today();
       var done = function () { document.title = t0; window.removeEventListener('afterprint', done); };
       window.addEventListener('afterprint', done);
@@ -1084,7 +1110,8 @@
       out.log[k] = {
         id: QIDRE.test(v.id || '') ? v.id : '', sk: v.sk, d: DIFF_EN[v.d] ? v.d : 'M', ev: oneOf(TESTS, v.ev, '99'),
         k: /^[A-D]$/.test(v.k || '') ? v.k : undefined, a: typeof v.a === 'string' && /^[A-D]?$/.test(v.a) ? v.a : undefined,
-        n: num(v.n), w: num(v.w), s: num(v.s), t: num(v.t), tw: num(v.tw)
+        n: num(v.n), w: num(v.w), s: num(v.s), t: num(v.t), tw: num(v.tw),
+        h: Array.isArray(v.h) ? v.h.filter(Array.isArray).slice(-20).map(function (x) { return [num(x[0]), /^[A-D-]$/.test(x[1] || '') ? x[1] : '-', x[2] ? 1 : 0]; }) : []
       };
     });
     ['flag', 'star'].forEach(function (f) { if (isObj(d[f])) Object.keys(d[f]).forEach(function (k) { if (UUIDRE.test(k) && d[f][k]) out[f][k] = 1; }); });
@@ -1109,7 +1136,15 @@
   function restoreMerge(d) {
     Object.keys(d.log).forEach(function (k) {
       var a = store.log[k], b = d.log[k];
+      var hist = {};                                               // attempts from both sides, once each
+      (a && a.h || []).concat(b.h || []).forEach(function (x) { hist[x[0] + x[1]] = x; });
+      var merged = Object.keys(hist).map(function (key) { return hist[key]; }).sort(function (x, y) { return x[0] - y[0]; }).slice(-20);
       if (!a || b.t > (a.t || 0)) { store.log[k] = b; if (k in d.res) store.res[k] = d.res[k]; }   // the newer attempt wins
+      store.log[k].h = merged;
+      if (a && merged.length) {                                    // counts follow the combined history
+        store.log[k].n = Math.max(store.log[k].n || 0, merged.length);
+        store.log[k].w = Math.max(store.log[k].w || 0, merged.filter(function (x) { return !x[2]; }).length);
+      }
     });
     Object.keys(d.res).forEach(function (k) { if (!(k in store.res)) store.res[k] = d.res[k]; });
     Object.keys(d.flag).forEach(function (k) { store.flag[k] = 1; });
@@ -1202,7 +1237,7 @@
         (n ? '<b>' + n + '문제</b>' + (tm ? '<span>' + tm + '</span>' : '') + '<span>' + esc(pick(CHECKS, p.check)[1]) + '</span>' : '<span>조건에 맞는 문제가 없어요</span>') +
         '</div><button type="button" class="pill" data-a="start"' + (n ? '' : ' disabled') + '>시작하기</button></div></div>';
     }
-    var y = window.scrollY, wrongN = nowCount(), learnN = Object.keys(store.words).filter(function (k) { return !store.words[k].ok; }).length;
+    var y = window.scrollY, wrongN = wrongCount(), learnN = Object.keys(store.words).filter(function (k) { return !store.words[k].ok; }).length;
     var tab = function (href, id, label, badge) {
       var on = ui.tab === id;
       return '<a href="' + href + '" class="' + (on ? 'on' : '') + '"' + (on ? ' aria-current="page"' : '') + '>' + label + badge + '</a>';
@@ -1608,7 +1643,7 @@
       else if (a === 'retrywrong') startTest(S.items.filter(function (x, j) { return S.ans[j] !== qcache[x.ext].key; }), S.label.replace(/, 틀린 문제 다시$/, '') + ', 틀린 문제 다시');
       else if (a === 'again') startTest(buildSet());
       else if (a === 'home') showHome();
-      else if (a === 'notes') { ui.nf = 'now'; ui.nsk = ''; ui.note = null; ui.noteOpen = false; if (location.hash === '#notes') showHome(); else location.hash = 'notes'; }
+      else if (a === 'notes') { ui.nf = 'wrong'; ui.nsk = ''; ui.note = null; ui.noteOpen = false; if (location.hash === '#notes') showHome(); else location.hash = 'notes'; }
       return;
     }
     if (a === 'home') { closeModal(); showHome(); return; }

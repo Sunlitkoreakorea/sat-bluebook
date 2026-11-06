@@ -241,6 +241,7 @@ input.w-my:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-
 .nc-bad { color: var(--bad); font-weight: 700; }
 .nc-ok { color: var(--ok); font-weight: 700; }
 .nc-w { margin-left: auto; color: var(--muted); white-space: pre; }
+.nc-cnt { font-size: 11.5px; font-weight: 700; color: #fff; background: var(--bad); border-radius: 99px; padding: 0 7px; line-height: 1.6; white-space: nowrap; }
 .n-none { color: var(--muted); padding: 24px 6px; text-align: center; margin: 0; }
 .n-empty { text-align: center; padding: 44px 20px; }
 .n-empty b { font-size: 17px; }
@@ -249,7 +250,11 @@ input.w-my:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-
 .nd-title { display: flex; flex-direction: column; min-width: 0; }
 .nd-title b { font-size: 17px; }
 .nd-title span { font-size: 12.5px; color: var(--muted); white-space: pre; }
-.nd-hist { color: var(--muted); font-size: 13px; margin: -8px 0 16px; }
+.nd-hist { color: var(--muted); font-size: 13px; margin: -8px 0 16px; display: flex; flex-direction: column; gap: 6px; }
+.nd-tl { display: flex; flex-wrap: wrap; gap: 5px; }
+.nd-tl i { font-style: normal; font-size: 12px; font-weight: 600; border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
+.nd-tl i.bad { color: var(--bad); background: var(--bad-soft); }
+.nd-tl i.ok { color: var(--ok); background: var(--ok-soft); }
 .nd-q { --fs: 17px; }
 .nd-q .bb-passage { max-width: none; border-left: 3px solid var(--line-soft); padding-left: 16px; margin-bottom: 6px; }
 .nd-q .bb-stem { margin: 16px 0 14px; }
@@ -506,6 +511,7 @@ mark.hl.has-note { box-shadow: inset 0 -2px 0 #555; }
   .pr-why p { margin: 0 0 4pt; }
   .pr-why p:last-child { margin-bottom: 0; }
   .pr-why-h { font-family: var(--sans); font-weight: 700; font-size: 9pt; margin-bottom: 3pt; }
+  .pr-hist { font-family: var(--sans); font-size: 8.5pt; color: #444; margin: 0 0 4pt; white-space: pre-wrap; }
   .pr-memo { margin-top: 5pt; font-family: var(--sans); font-size: 9pt; white-space: pre-wrap; }
   .pr-key { break-before: page; }
   .pr-key h2 { font-family: var(--sans); font-size: 13pt; margin: 0 0 8pt; }
